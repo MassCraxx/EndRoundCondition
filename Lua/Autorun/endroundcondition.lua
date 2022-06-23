@@ -1,4 +1,4 @@
--- EndRoundCondition v1 - ends the round on certain conditions
+-- EndRoundCondition v2 - ends the round on certain conditions
 -- by MassCraxx
 
 -- CONFIG
@@ -14,6 +14,8 @@ local EndGameMessageIcon = "InfoFrameTabButton.Mission"
 
 -- minimum amount of players that must have died before any condition can be met. 0 = Disabled
 local MinimumDiedCrew = 0
+-- minimum amount of players that must have respawned before any condition can be met. 0 = Disabled
+local MinimumRespawnedCrew = 1
 
 -- end round if reactor condition reaches 0.
 local EndOnReactorMeltdown = true
@@ -24,13 +26,21 @@ local EndOnCrewDeaths = 0
 
 
 EndRound = {}
+
+EndRound.DiedPlayers = 0
+EndRound.RespawnedPlayers = 0
+EndRound.ReactorItem = nil
+EndRound.Spawns = {}
+
 EndRound.Log = function (message)
     Game.Log("[EndRoundCondition] " .. message, 6)
 end
 
 EndRound.CheckCondition = function()
     -- if after so many died crew members
-    if not MinimumDiedCrew or MinimumDiedCrew == 0 or not EndRound.DiedPlayers or EndRound.DiedPlayers >= MinimumDiedCrew then
+    if (not MinimumDiedCrew or MinimumDiedCrew == 0 or EndRound.DiedPlayers >= MinimumDiedCrew)
+        -- and so many respawned crew members
+        and (not MinimumRespawnedCrew or MinimumRespawnedCrew == 0 or EndRound.RespawnedPlayers >= MinimumRespawnedCrew) then
 
         -- if reactor exploded
         if EndOnReactorMeltdown then
@@ -55,7 +65,7 @@ EndRound.CheckCondition = function()
         end
 
         -- if enough players died
-        if EndOnCrewDeaths and EndOnCrewDeaths > 0 and EndRound.DiedPlayers and EndRound.DiedPlayers >= EndOnCrewDeaths then
+        if EndOnCrewDeaths and EndOnCrewDeaths > 0 and EndRound.DiedPlayers >= EndOnCrewDeaths then
             return true, tostring(EndRound.DiedPlayers) .. " players died"
         end
     end
@@ -75,6 +85,7 @@ EndRound.GetReactor = function()
     elseif EndRound.ReactorItem then
         return EndRound.ReactorItem
     end
+    return nil
 end
 
 EndRound.SendMessage = function (client, text, icon)
@@ -89,9 +100,11 @@ EndRound.SendMessage = function (client, text, icon)
     Game.SendDirectChatMessage("", text, nil, ChatMessageType.Private, client)
 end
 
-Hook.Add("roundStart", "EndRoundCondition.roundStart", function ()
+Hook.Add("roundEnd", "EndRoundCondition.roundEnd", function ()
     EndRound.DiedPlayers = 0
+    EndRound.RespawnedPlayers = 0
     EndRound.ReactorItem = nil
+    EndRound.Spawns = {}
 end)
 
 local checkTime = -1
@@ -123,46 +136,52 @@ Hook.Add("think", "EndRoundCondition.think", function ()
     end
 end)
 
+if (MinimumDiedCrew and MinimumDiedCrew > 0) or (EndOnCrewDeaths and EndOnCrewDeaths > 0) then
+-- store deaths
+    Hook.Add("characterDeath", "Traitormod.characterDeath", function (character, affliction)
+        -- if character is valid player
+        if  character == nil or 
+            character.IsHuman == false or
+            character.IsBot == true or
+            character.ClientDisconnected == true then
+            return
+        end
+
+        EndRound.DiedPlayers = (EndRound.DiedPlayers or 0) + 1
+    end)
+end
+
+if MinimumRespawnedCrew and MinimumRespawnedCrew > 0 then
+    Hook.Add("characterCreated", "EndRoundCondition.characterCreated", function (character)
+        -- if character is valid player
+        if character == nil or 
+        character.IsBot == true or
+        character.IsHuman == false or
+        character.ClientDisconnected == true then
+            return
+        end
+
+        if EndRound.Spawns[character.Name] == nil then
+            -- if first spawn for character, ignore and store
+            EndRound.Spawns[character.Name] = 1
+        else
+            -- else increase RespawnedPlayers
+            EndRound.Spawns[character.Name] = EndRound.Spawns[character.Name] + 1
+            EndRound.RespawnedPlayers = EndRound.RespawnedPlayers + 1
+        end
+    end)
+end
+
 -- Commands hook
 Hook.Add("chatMessage", "EndRoundCondition.ChatMessage", function (message, client)
-    if not client.HasPermission(ClientPermissions.ConsoleCommands) then return end
+    if not client.HasPermission(ClientPermissions.All) then return end
 
     if message == "!meltdown" then
         local reactor = EndRound.GetReactor()
+        EndRound.Log("Admin " .. client.Name .. " initiating meltdown.")
         if reactor then
             reactor.Condition = 0
         end
         return true
     end
 end)
-
-if (EndOnCrewDeaths and EndOnCrewDeaths > 0) or MinimumDiedCrew > 0 then
--- store deaths
-    Hook.Add("characterDeath", "Traitormod.DeathByTraitor", function (character, affliction)
-        -- if character is valid player
-        if  character == nil or 
-            character.IsHuman == false or
-            character.IsBot == true or
-            character.ClientDisconnected == true 
-        then
-            return
-        end
-        EndRound.DiedPlayers = (EndRound.DiedPlayers or 0) + 1
-    end)
-end
-
---if MinimumRespawnedPlayers > 0 then
---    Hook.Add("characterCreated", "EndRoundCondition.characterCreated", function (character)
---        -- if character is valid player
---        if character == nil or 
---        character.IsBot == true or
---        character.IsHuman == false or
---        character.ClientDisconnected == true then
---            return
---        end
---
---        if not EndRound.HasBeenSpawned[character] or character.Name ~= EndRound.HasBeenSpawned[character].Name then
---            EndRound.Respawns = EndRound.Respawns + 1
---        end
---    end)
---end

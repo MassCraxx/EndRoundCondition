@@ -1,4 +1,4 @@
--- EndRoundCondition v2 - ends the round on certain conditions
+-- EndRoundCondition v3 - ends the round on certain conditions
 -- by MassCraxx
 
 -- CONFIG
@@ -138,7 +138,7 @@ end)
 
 if (MinimumDiedCrew and MinimumDiedCrew > 0) or (EndOnCrewDeaths and EndOnCrewDeaths > 0) then
 -- store deaths
-    Hook.Add("characterDeath", "Traitormod.characterDeath", function (character, affliction)
+    Hook.Add("characterDeath", "EndRoundCondition.characterDeath", function (character, affliction)
         -- if character is valid player
         if  character == nil or 
             character.IsHuman == false or
